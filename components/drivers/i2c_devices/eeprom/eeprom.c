@@ -119,8 +119,12 @@ bool eepromReadBuffer(uint8_t *buffer, size_t readAddr, size_t len)
 bool eepromWriteBuffer(uint8_t *buffer, size_t writeAddr, size_t len)
 {
     bool status = false;
-    writeAddr += EEPROM_IN_FLASH_ADDR;
-    //TODO if (spi_flash_write(writeAddr, buffer, len) == ESP_OK) {
+    // Stub: the backing spi_flash_write() is not wired up yet, so the arguments
+    // are deliberately unused. Marked explicitly to keep -Werror quiet.
+    (void)buffer;
+    (void)writeAddr;
+    (void)len;
+    //TODO if (spi_flash_write(writeAddr + EEPROM_IN_FLASH_ADDR, buffer, len) == ESP_OK) {
     if (1) {
 
         status = true;

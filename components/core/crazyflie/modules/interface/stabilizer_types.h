@@ -80,6 +80,7 @@ typedef struct quaternion_s {
       float z;
       float w;
     };
+    float q[4];
   };
 } quaternion_t;
 
