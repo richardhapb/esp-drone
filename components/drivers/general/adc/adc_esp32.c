@@ -47,12 +47,13 @@ static const adc_channel_t channel = ADC_CHANNEL_1;     // GPIO2 if ADC1
 static const adc_bitwidth_t width = ADC_BITWIDTH_DEFAULT;
 static const adc_atten_t atten = ADC_ATTEN_DB_12;
 static const adc_unit_t unit = ADC_UNIT_1;
-#define DEFAULT_VREF 1100 //Used only when the chip carries no calibration eFuse
+#define DEFAULT_VREF 1100 //ESP32 only; other targets have no default_vref knob
 #define NO_OF_SAMPLES   30          //Multisampling
 
 /**
  * Set up a calibration scheme for the configured unit/channel/attenuation.
- * Line fitting is what the ESP32 supports; the S2/S3 use curve fitting.
+ * ESP32 and ESP32-S2 use line fitting; the S3 uses curve fitting. Only the
+ * ESP32 exposes a default_vref override.
  * Calibration is optional: without it we fall back to a raw approximation.
  */
 static bool adcCalibrationInit(void)
@@ -76,7 +77,9 @@ static bool adcCalibrationInit(void)
         .unit_id = unit,
         .atten = atten,
         .bitwidth = width,
+#if CONFIG_IDF_TARGET_ESP32
         .default_vref = DEFAULT_VREF,
+#endif
     };
     err = adc_cali_create_scheme_line_fitting(&caliConfig, &caliHandle);
     if (err == ESP_OK) {
