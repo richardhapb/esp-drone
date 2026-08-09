@@ -356,5 +356,19 @@ menu "ESPDrone Config"
       string "Upstream Wi-Fi password (station mode)"
       default ""
 
+  config ENABLE_ESPNOW_CTRL
+      bool "Enable ESP-NOW control link"
+      default n
+      help
+          ESP-NOW retransmission and responder binding sweep the radio
+          across every channel in the country range. In station mode that
+          drags the radio off the AP's channel mid-association, so the
+          4-way handshake times out (disconnect reason 15) and the link
+          never settles.
+
+          Leave this off to use CRTP over Wi-Fi. Turn it on only if the
+          ESP-NOW controller is your primary link, in which case expect
+          the station association to be unreliable.
+
 
 endmenu

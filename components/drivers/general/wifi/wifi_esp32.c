@@ -341,13 +341,18 @@ void wifiInit(void)
      * control link cannot pay that; the motors dominate power draw anyway. */
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     /* No esp_wifi_set_channel() here: in station mode the channel is whatever
-     * the AP we associate to is using, and forcing it prevents association.
-     * esp-now consequently follows the AP's channel rather than WIFI_CH. */
+     * the AP we associate to is using, and forcing it prevents association. */
+
+#ifdef CONFIG_ENABLE_ESPNOW_CTRL
+    /* esp-now sweeps the radio across every channel in the country range on
+     * retransmit and while the responder is binding. That is incompatible
+     * with holding a station association -- see CONFIG_ENABLE_ESPNOW_CTRL. */
     espnow_config_t espnow_config = ESPNOW_INIT_CONFIG_DEFAULT();
     espnow_init(&espnow_config);
     esp_event_handler_register(ESP_EVENT_ESPNOW, ESP_EVENT_ANY_ID, app_espnow_event_handler, NULL);
     ESP_ERROR_CHECK(espnow_ctrl_responder_bind(30 * 1000, -55, NULL));
     espnow_ctrl_responder_data(espnow_ctrl_data_cb);
+#endif
     if (strlen(CONFIG_WIFI_STA_SSID) == 0) {
         DEBUG_PRINT_LOCAL("WIFI_STA_SSID is empty - set it via idf.py menuconfig, "
                           "the drone cannot associate without it");
