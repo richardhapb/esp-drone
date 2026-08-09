@@ -30,6 +30,8 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#include "driver/gpio.h"
+
 #include "stm32_legacy.h"
 #include "i2cdev.h"
 #include "i2c_drv.h"
@@ -46,7 +48,20 @@ int i2cdevScan(I2C_Dev *dev)
 {
     int found = 0;
 
-    DEBUG_PRINTI("scanning i2c port %d", dev->def->i2cPort);
+    /* Idle line levels say what a scan cannot: both high means the bus and its
+     * pull-ups are healthy and nothing is answering, SDA low means a device or
+     * short is holding the line, both low means no pull-ups or no rail. */
+    int scl = gpio_get_level(dev->def->gpioSCLPin);
+    int sda = gpio_get_level(dev->def->gpioSDAPin);
+
+    DEBUG_PRINTI("scanning i2c port %d - idle SCL(IO%d)=%d SDA(IO%d)=%d",
+                 dev->def->i2cPort, dev->def->gpioSCLPin, scl,
+                 dev->def->gpioSDAPin, sda);
+
+    if (scl == 0 || sda == 0) {
+        DEBUG_PRINTW("  bus not idle high - wiring, pull-ups or power, "
+                     "no point blaming a device");
+    }
 
     /* Address-only write, no payload: a device that is present ACKs its
      * address and we stop there. Reserved ranges 0x00-0x07 and 0x78-0x7F are
