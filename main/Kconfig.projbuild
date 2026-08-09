@@ -349,5 +349,12 @@ menu "ESPDrone Config"
                 GPIO number (IOxx) MOTOR04_PIN
     endmenu
 
+  config WIFI_STA_SSID
+      string "Upstream Wi-Fi SSID (station mode)"
+      default ""
+  config WIFI_STA_PASSWORD
+      string "Upstream Wi-Fi password (station mode)"
+      default ""
+
 
 endmenu

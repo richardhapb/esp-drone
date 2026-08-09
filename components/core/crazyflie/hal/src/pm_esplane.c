@@ -315,6 +315,7 @@ void pmTask(void *param)
 {
   PMStates pmStateOld = battery;
   uint32_t tickCount = 0;
+  uint32_t vbatTraceCnt = 0;
 
 #ifdef configUSE_APPLICATION_TASK_TAG
 	#if configUSE_APPLICATION_TASK_TAG == 1
@@ -338,6 +339,12 @@ void pmTask(void *param)
 #ifdef DEBUG_EP2
   DEBUG_PRINTD("batteryLevel=%u extBatteryVoltageMV=%u \n", batteryLevel, extBatteryVoltageMV);
 #endif
+  // TEMP vbat live trace over USB console (~500ms): watch sag under throttle
+  if ((vbatTraceCnt++ % 5) == 0) {
+    DEBUG_PRINTI("VBAT %.3f V | I %.3f A | level=%u | state=%d",
+                 (double)pmGetBatteryVoltage(), (double)extBatteryCurrent,
+                 batteryLevel, (int)pmState);
+  }
     tickCount = xTaskGetTickCount();
 
     if (pmGetBatteryVoltage() > PM_BAT_LOW_VOLTAGE)
