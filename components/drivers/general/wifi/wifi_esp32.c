@@ -135,6 +135,38 @@ bool wifiSendData(uint32_t size, uint8_t *data)
     return (xQueueSend(udpDataTx, &outStage, M2T(100)) == pdTRUE);
 };
 
+/**
+ * Watch for an association that has gone stale without an event.
+ *
+ * WIFI_EVENT_STA_DISCONNECTED drives reconnection, but the link can die
+ * without one -- a mesh AP moving or dropping the client leaves the station
+ * believing it is still associated, so nothing ever retries and the drone
+ * stays off the network until it is rebooted. Poll the association and the
+ * lease rather than trusting the event to arrive.
+ */
+static void wifi_watchdog_task(void *pvParameters)
+{
+    while (true) {
+        vTaskDelay(M2T(5000));
+
+        wifi_ap_record_t ap;
+        bool associated = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK);
+
+        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        esp_netif_ip_info_t ip = {0};
+        bool leased = (netif != NULL) &&
+                      (esp_netif_get_ip_info(netif, &ip) == ESP_OK) &&
+                      (ip.ip.addr != 0);
+
+        if (!associated || !leased) {
+            DEBUG_PRINT_LOCAL("link stale (associated=%d, ip=%d), reconnecting",
+                              associated, leased);
+            esp_wifi_disconnect();
+            esp_wifi_connect();
+        }
+    }
+}
+
 static esp_err_t udp_server_create(void *arg)
 {
     if (isUDPInit){
@@ -372,5 +404,6 @@ void wifiInit(void)
     }
     xTaskCreate(udp_server_tx_task, UDP_TX_TASK_NAME, UDP_TX_TASK_STACKSIZE, NULL, UDP_TX_TASK_PRI, NULL);
     xTaskCreate(udp_server_rx_task, UDP_RX_TASK_NAME, UDP_RX_TASK_STACKSIZE, NULL, UDP_RX_TASK_PRI, NULL);
+    xTaskCreate(wifi_watchdog_task, "WIFI_WD", 2560, NULL, 1, NULL);
     isInit = true;
 }
