@@ -77,8 +77,21 @@ bool mpu6050Test(void)
  */
 bool mpu6050TestConnection()
 {
+    uint8_t whoAmI = 0;
+
     vTaskDelay(M2T(100));
-    return mpu6050GetDeviceID() == 0b110100;
+
+    /* Read WHO_AM_I directly rather than via mpu6050GetDeviceID(), which
+     * discards the transfer status and returns a stale static buffer -- so a
+     * bus error and a wrong device ID are indistinguishable in its result. */
+    if (!i2cdevReadByte(I2Cx, devAddr, MPU6050_RA_WHO_AM_I, &whoAmI)) {
+        DEBUG_PRINTE("WHO_AM_I read failed: no ACK from address 0x%02X", devAddr);
+        return false;
+    }
+
+    DEBUG_PRINTI("WHO_AM_I = 0x%02X (expected 0x68)", whoAmI);
+
+    return ((whoAmI & 0x7E) >> 1) == 0b110100;
 }
 
 /** Do a MPU6050 self test.
