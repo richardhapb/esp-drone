@@ -67,13 +67,43 @@ static uint8_t calculate_cksum(void *data, size_t len)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
-    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *) event_data;
-        DEBUG_PRINT_LOCAL("station" MACSTR "join, AID=%d", MAC2STR(event->mac), event->aid);
+    if (event_base != WIFI_EVENT) {
+        return;
+    }
 
-    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;
-        DEBUG_PRINT_LOCAL("station" MACSTR "leave, AID=%d", MAC2STR(event->mac), event->aid);
+    switch (event_id) {
+    case WIFI_EVENT_STA_START:
+        /* esp_wifi_start() only brings the interface up. Association has to be
+         * asked for explicitly, and this is the earliest point it is legal. */
+        esp_wifi_connect();
+        break;
+
+    case WIFI_EVENT_STA_CONNECTED: {
+        wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
+        DEBUG_PRINT_LOCAL("associated with %.*s on channel %d",
+                          event->ssid_len, event->ssid, event->channel);
+        break;
+    }
+
+    case WIFI_EVENT_STA_DISCONNECTED: {
+        wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
+        DEBUG_PRINT_LOCAL("disconnected, reason=%d, retrying", event->reason);
+        esp_wifi_connect();
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+static void ip_event_handler(void *arg, esp_event_base_t event_base,
+                             int32_t event_id, void *event_data)
+{
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        DEBUG_PRINT_LOCAL("got ip " IPSTR ", CRTP UDP server on port %d",
+                          IP2STR(&event->ip_info.ip), UDP_SERVER_PORT);
     }
 }
 
@@ -261,10 +291,9 @@ void wifiInit(void)
     DEBUG_QUEUE_MONITOR_REGISTER(udpDataTx);
 
     espnow_storage_init();
-    esp_netif_t *ap_netif = NULL;
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ap_netif = esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
     uint8_t mac[6];
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -276,7 +305,13 @@ void wifiInit(void)
                     NULL,
                     NULL));
 
-    ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, mac));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                    IP_EVENT_STA_GOT_IP,
+                    &ip_event_handler,
+                    NULL,
+                    NULL));
+
+    ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_STA, mac));
     sprintf(WIFI_SSID, "%s_%02X%02X%02X%02X%02X%02X", CONFIG_WIFI_BASE_SSID, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     wifi_config_t wifi_config = {
@@ -284,28 +319,29 @@ void wifiInit(void)
         .ssid = CONFIG_WIFI_STA_SSID,
         .password = CONFIG_WIFI_STA_PASSWORD,
         .scan_method = WIFI_FAST_SCAN,
-        .channel = 1,
+        /* channel 0 = scan all. Pinning it here stops the drone finding an
+         * AP that is on any other channel. */
+        .channel = 0,
       }
     };
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_channel(WIFI_CH, WIFI_SECOND_CHAN_NONE);
+    /* No esp_wifi_set_channel() here: in station mode the channel is whatever
+     * the AP we associate to is using, and forcing it prevents association.
+     * esp-now consequently follows the AP's channel rather than WIFI_CH. */
     espnow_config_t espnow_config = ESPNOW_INIT_CONFIG_DEFAULT();
     espnow_init(&espnow_config);
     esp_event_handler_register(ESP_EVENT_ESPNOW, ESP_EVENT_ANY_ID, app_espnow_event_handler, NULL);
     ESP_ERROR_CHECK(espnow_ctrl_responder_bind(30 * 1000, -55, NULL));
     espnow_ctrl_responder_data(espnow_ctrl_data_cb);
-    esp_netif_ip_info_t ip_info = {
-        .ip.addr = ipaddr_addr("192.168.43.42"),
-        .netmask.addr = ipaddr_addr("255.255.255.0"),
-        .gw.addr      = ipaddr_addr("192.168.43.42"),
-    };
-    ESP_ERROR_CHECK(esp_netif_dhcps_stop(ap_netif));
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(ap_netif, &ip_info));
-    ESP_ERROR_CHECK(esp_netif_dhcps_start(ap_netif));
-    DEBUG_PRINT_LOCAL("wifi_init_softap complete.SSID:%s password:%s", WIFI_SSID, WIFI_PWD);
+    if (strlen(CONFIG_WIFI_STA_SSID) == 0) {
+        DEBUG_PRINT_LOCAL("WIFI_STA_SSID is empty - set it via idf.py menuconfig, "
+                          "the drone cannot associate without it");
+    } else {
+        DEBUG_PRINT_LOCAL("wifi station init complete, joining %s", CONFIG_WIFI_STA_SSID);
+    }
 
     if (udp_server_create(NULL) == ESP_FAIL) {
         DEBUG_PRINT_LOCAL("UDP server create socket failed");
