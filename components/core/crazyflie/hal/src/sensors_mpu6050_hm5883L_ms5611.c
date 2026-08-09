@@ -409,6 +409,12 @@ static void sensorsDeviceInit(void)
     };
 
     i2cdevInit(I2C0_DEV);
+
+    /* Enumerate the bus before trusting any single device probe: it separates
+     * "this chip is not answering" from "nothing on this bus is answering",
+     * and catches an MPU6050 strapped to 0x69 instead of 0x68. */
+    i2cdevScan(I2C0_DEV);
+
     mpu6050Init(I2C0_DEV);
 
     if (mpu6050TestConnection() == true) {

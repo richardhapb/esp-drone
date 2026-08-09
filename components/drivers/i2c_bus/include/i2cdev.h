@@ -90,6 +90,14 @@ bool i2cdevReadReg16(I2C_Dev *dev, uint8_t devAddress, uint16_t memAddress,
 int i2cdevInit(I2C_Dev *dev);
 
 /**
+ * Probe every valid 7-bit address on the bus and log which ones ACK.
+ *
+ * @param dev  Bus to scan
+ * @return Number of devices that responded
+ */
+int i2cdevScan(I2C_Dev *dev);
+
+/**
  * Read a byte from an I2C peripheral
  * @param dev  Pointer to I2C peripheral to read from
  * @param devAddress  The device address to read from

@@ -42,6 +42,37 @@ int i2cdevInit(I2C_Dev *dev)
     return true;
 }
 
+int i2cdevScan(I2C_Dev *dev)
+{
+    int found = 0;
+
+    DEBUG_PRINTI("scanning i2c port %d", dev->def->i2cPort);
+
+    /* Address-only write, no payload: a device that is present ACKs its
+     * address and we stop there. Reserved ranges 0x00-0x07 and 0x78-0x7F are
+     * skipped. */
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(cmd);
+        esp_err_t err = i2c_master_cmd_begin(dev->def->i2cPort, cmd, pdMS_TO_TICKS(50));
+        i2c_cmd_link_delete(cmd);
+
+        if (err == ESP_OK) {
+            DEBUG_PRINTI("  ACK from 0x%02X", addr);
+            found++;
+        }
+    }
+
+    if (found == 0) {
+        DEBUG_PRINTW("  no devices on port %d - bus, pull-ups or power, not one chip",
+                     dev->def->i2cPort);
+    }
+
+    return found;
+}
+
 bool i2cdevRead(I2C_Dev *dev, uint8_t devAddress, uint16_t len, uint8_t *data)
 {
     return i2cdevReadReg8(dev, devAddress, I2CDEV_NO_MEM_ADDR, len, data);
