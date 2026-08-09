@@ -38,6 +38,9 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 
+#include "driver/gpio.h"
+#include "esp_rom_sys.h"
+
 #include "stm32_legacy.h"
 #include "i2c_drv.h"
 #include "config.h"
@@ -77,11 +80,68 @@ I2cDrv deckBus = {
     .def                = &deckBusDef,
 };
 
+/**
+ * Free a bus wedged by a slave holding SDA low.
+ *
+ * A slave that was mid-transfer when the master reset keeps driving SDA until
+ * it has clocked out the rest of its byte. The MPU6050 has no reset pin, so a
+ * CPU-only reset cannot clear this and the bus stays stuck until the board is
+ * physically unpowered - which is what the sensor driver's "power off and
+ * power on the device" message is really asking for.
+ *
+ * Recovery is the standard sequence: pulse SCL until the slave lets SDA go,
+ * then issue a STOP so it returns to idle. Runs before the I2C peripheral
+ * claims the pins.
+ */
+static void i2cdrvBusRecover(const I2cDef *def)
+{
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << def->gpioSCLPin) | (1ULL << def->gpioSDAPin),
+        .mode         = GPIO_MODE_INPUT_OUTPUT_OD,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io);
+
+    gpio_set_level(def->gpioSDAPin, 1);
+    gpio_set_level(def->gpioSCLPin, 1);
+    esp_rom_delay_us(10);
+
+    if (gpio_get_level(def->gpioSDAPin) == 1) {
+        return;                                 /* bus already idle */
+    }
+
+    DEBUG_PRINTW("i2c %d: SDA held low, clocking the bus free", def->i2cPort);
+
+    /* Nine pulses is one byte plus the ACK - enough for any slave to finish. */
+    for (int i = 0; i < 9 && gpio_get_level(def->gpioSDAPin) == 0; i++) {
+        gpio_set_level(def->gpioSCLPin, 0);
+        esp_rom_delay_us(5);
+        gpio_set_level(def->gpioSCLPin, 1);
+        esp_rom_delay_us(5);
+    }
+
+    /* STOP: SDA low->high while SCL is high. */
+    gpio_set_level(def->gpioSDAPin, 0);
+    esp_rom_delay_us(5);
+    gpio_set_level(def->gpioSCLPin, 1);
+    esp_rom_delay_us(5);
+    gpio_set_level(def->gpioSDAPin, 1);
+    esp_rom_delay_us(5);
+
+    DEBUG_PRINTI("i2c %d: after recovery SCL=%d SDA=%d", def->i2cPort,
+                 gpio_get_level(def->gpioSCLPin),
+                 gpio_get_level(def->gpioSDAPin));
+}
+
 static void i2cdrvInitBus(I2cDrv *i2c)
 {
     if (isinit_i2cPort[i2c->def->i2cPort]) {
         return;
     }
+
+    i2cdrvBusRecover(i2c->def);
 
     i2c_config_t conf = {0};
     conf.mode = I2C_MODE_MASTER;
