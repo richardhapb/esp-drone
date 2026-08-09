@@ -30,7 +30,6 @@
 
 #include "esp_idf_version.h"
 #include "syslink.h"
-#include "driver/adc.h"
 //#include "deck.h"
 
 #ifndef CRITICAL_LOW_VOLTAGE
