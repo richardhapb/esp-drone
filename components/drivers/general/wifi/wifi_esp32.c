@@ -88,6 +88,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     case WIFI_EVENT_STA_DISCONNECTED: {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
         DEBUG_PRINT_LOCAL("disconnected, reason=%d, retrying", event->reason);
+        /* Back off before retrying. Reconnecting immediately from inside the
+         * event handler hammers the AP and makes handshake timeouts worse
+         * rather than better. */
+        vTaskDelay(M2T(500));
         esp_wifi_connect();
         break;
     }
@@ -318,7 +322,11 @@ void wifiInit(void)
       .sta = {
         .ssid = CONFIG_WIFI_STA_SSID,
         .password = CONFIG_WIFI_STA_PASSWORD,
-        .scan_method = WIFI_FAST_SCAN,
+        /* Scan every channel and take the strongest BSSID. FAST_SCAN stops at
+         * the first match, which on a mesh SSID is often a distant node that
+         * then fails the 4-way handshake (disconnect reason 15). */
+        .scan_method = WIFI_ALL_CHANNEL_SCAN,
+        .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
         /* channel 0 = scan all. Pinning it here stops the drone finding an
          * AP that is on any other channel. */
         .channel = 0,
@@ -328,6 +336,10 @@ void wifiInit(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    /* Modem sleep parks the radio between DTIM beacons, which adds tens of
+     * milliseconds of jitter to every control packet and slows DHCP. A flight
+     * control link cannot pay that; the motors dominate power draw anyway. */
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     /* No esp_wifi_set_channel() here: in station mode the channel is whatever
      * the AP we associate to is using, and forcing it prevents association.
      * esp-now consequently follows the AP's channel rather than WIFI_CH. */
