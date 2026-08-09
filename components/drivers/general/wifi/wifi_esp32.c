@@ -144,10 +144,17 @@ bool wifiSendData(uint32_t size, uint8_t *data)
  * stays off the network until it is rebooted. Poll the association and the
  * lease rather than trusting the event to arrive.
  */
+#define WIFI_WD_PERIOD_MS       5000
+/* Associated but no lease is normal while DHCP is still running, so only act
+ * on it once it has clearly stopped making progress. */
+#define WIFI_WD_NO_LEASE_GRACE  6
+
 static void wifi_watchdog_task(void *pvParameters)
 {
+    int noLeaseChecks = 0;
+
     while (true) {
-        vTaskDelay(M2T(5000));
+        vTaskDelay(M2T(WIFI_WD_PERIOD_MS));
 
         wifi_ap_record_t ap;
         bool associated = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK);
@@ -158,12 +165,20 @@ static void wifi_watchdog_task(void *pvParameters)
                       (esp_netif_get_ip_info(netif, &ip) == ESP_OK) &&
                       (ip.ip.addr != 0);
 
-        if (!associated || !leased) {
-            DEBUG_PRINT_LOCAL("link stale (associated=%d, ip=%d), reconnecting",
-                              associated, leased);
-            esp_wifi_disconnect();
-            esp_wifi_connect();
+        if (associated && leased) {
+            noLeaseChecks = 0;
+            continue;
         }
+
+        if (associated && ++noLeaseChecks < WIFI_WD_NO_LEASE_GRACE) {
+            continue;                   /* give DHCP room to finish */
+        }
+
+        DEBUG_PRINT_LOCAL("link stale (associated=%d, ip=%d), reconnecting",
+                          associated, leased);
+        noLeaseChecks = 0;
+        esp_wifi_disconnect();
+        esp_wifi_connect();
     }
 }
 
