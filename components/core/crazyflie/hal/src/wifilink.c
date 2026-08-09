@@ -148,8 +148,6 @@ static void wifilinkTask(void *param)
         }
 
         /* command step - receive 05 send to crtpPacketDelivery queue */
-        DEBUG_PRINTI("rx udp %d B -> crtp port %d ch %d size %d",
-                     wifiIn.size, p.header >> 4, p.header & 0x03, p.size);
         xQueueSend(crtpPacketDelivery, &p, M2T(sendWaitMs));
     }
 
@@ -169,8 +167,6 @@ static int wifilinkSendPacket(CRTPPacket *p)
 {
     ASSERT(p->size <= CRTP_MAX_DATA_SIZE);
     ledseqRun(&seq_linkDown);
-    DEBUG_PRINTI("tx crtp port %d ch %d size %d", p->header >> 4,
-                 p->header & 0x03, p->size);
     return wifiSendData(p->size + 1, p->raw);
 }
 

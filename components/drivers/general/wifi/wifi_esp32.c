@@ -190,8 +190,13 @@ static void udp_server_rx_task(void *pvParameters)
                 //copy part of the UDP packet, the size not include cksum
                 inPacket.size = len - 1;
                 memcpy(inPacket.data, rx_buffer, inPacket.size);
+                /* Mark the peer known *before* handing the packet on. The TX
+                 * task drops anything queued while isUDPConnected is false,
+                 * and the reply to this very packet can be produced and
+                 * dequeued before this task runs again -- which silently ate
+                 * the response to the first packet of every session. */
+                isUDPConnected = true;
                 xQueueSend(udpDataRx, &inPacket, M2T(10));
-                if(!isUDPConnected) isUDPConnected = true;
             }else{
                 DEBUG_PRINT_LOCAL("udp packet cksum unmatched");
             }
